@@ -1,0 +1,7 @@
++ ./terraform-linux apply terraform.plan
+18-Jun-2020 23:50:02	module.ssui.azurerm_application_gateway.aerserv-prod-eastus-prod-ssui-agw: Modifying... [id=/subscriptions/XXXX-XXXX/resourceGroups/aerserv-prod-eastus-rg/providers/Microsoft.Network/applicationGateways/production-ssui-agw]
+18-Jun-2020 23:50:44	
+18-Jun-2020 23:50:44	Error: Error Creating/Updating Application Gateway "production-ssui-agw" (Resource Group "aerserv-prod-eastus-rg"): network.ApplicationGatewaysClient#CreateOrUpdate: Failure sending request: StatusCode=400 -- Original Error: Code="ApplicationGatewayWafConfigurationCannotBeChangedWithWafPolicy" Message="WebApplicationFirewallConfiguration cannot be changed when there is a WAF Policy /subscriptions/XXXX-XXXX/resourceGroups/aerserv-prod-eastus-rg/providers/Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies/aerserv-prod-eastus-prod-ssui-agw-wafpolicy2 associated with it." Details=[]
+18-Jun-2020 23:50:44	
+18-Jun-2020 23:50:44	  on ssui/production-ssui-agw.tf line 20, in resource "azurerm_application_gateway" "aerserv-prod-eastus-prod-ssui-agw":
+18-Jun-2020 23:50:44	  20: resource "azurerm_application_gateway" "aerserv-prod-eastus-prod-ssui-agw" {
