@@ -1,0 +1,453 @@
+resource "azurerm_public_ip" "aerserv-prod-eastus-prod-ssui-agw-pubip" {
+  name                = "aerserv-prod-eastus-prod-ssui-agw-pubip"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = {
+    environment = "prod"
+    product     = "aerserv"
+    role        = "ssui"
+    name        = "aerserv-prod-eastus-prod-ssui-pubip"
+    service     = "prod ssui pubip"
+    team        = "aerserv devops"
+    teamemail   = "devops@inmobi.com"
+  }
+
+}
+
+resource "azurerm_application_gateway" "aerserv-prod-eastus-prod-ssui-agw" {
+  name                = "production-ssui-agw"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  sku {
+    name = "WAF_v2"
+    tier = "WAF_v2"
+  }
+
+  firewall_policy_id = "/subscriptions/XXXX-XXXX/resourceGroups/aerserv-prod-eastus-rg/providers/Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies/aerserv-prod-eastus-prod-ssui-agw-wafpolicy2"
+
+  autoscale_configuration {
+    min_capacity = 2
+    max_capacity = 8
+  }
+
+  gateway_ip_configuration {
+    name      = "aerserv-prod-eastus-prod-ssui-agw-gw-ip"
+    subnet_id = var.aerserv_production_eastus_public_appgw_subnet_id
+  }
+
+  frontend_port {
+    name = "aerserv-prod-eastus-prod-ssui-agw-port-80"
+    port = 80
+  }
+
+  frontend_port {
+    name = "aerserv-prod-eastus-prod-ssui-agw-port-443"
+    port = 443
+  }
+
+  ssl_policy {
+    policy_type = "Predefined"
+    policy_name = "AppGwSslPolicy20170401S"
+  }
+
+  frontend_ip_configuration {
+    name                 = "prod-ssui"
+    public_ip_address_id = azurerm_public_ip.aerserv-prod-eastus-prod-ssui-agw-pubip.id
+  }
+
+  backend_address_pool {
+    name  = "prod-ssui-port-8080"
+    fqdns = ["ssui1001-prod.aerserv.com", "ssui1002-prod.aerserv.com"]
+  }
+
+  probe {
+    interval            = 60
+    host                = "production-ssui-agw"
+    name                = "prod-ssui-port-8080-login"
+    protocol            = "Http"
+    path                = "/login"
+    timeout             = 30
+    unhealthy_threshold = 10
+  }
+
+  backend_http_settings {
+    name                  = "prod-ssui-port-8080"
+    cookie_based_affinity = "Disabled"
+    path                  = "/"
+    port                  = 8080
+    protocol              = "Http"
+    request_timeout       = 60
+    probe_name            = "prod-ssui-port-8080-login"
+    connection_draining {
+      enabled           = "true"
+      drain_timeout_sec = "60"
+    }
+  }
+
+  ssl_certificate {
+    name     = "aerserv-wildcard-cert-non-ecc-2019"
+    data     = filebase64("aerserv-wildcard-cert-non-ecc-2019-with-passwd.pfx")
+  }
+
+  http_listener {
+    name                           = "prod-ssui-port-443"
+    frontend_ip_configuration_name = "prod-ssui"
+    frontend_port_name             = "aerserv-prod-eastus-prod-ssui-agw-port-443"
+    protocol                       = "Https"
+    ssl_certificate_name           = "aerserv-wildcard-cert-non-ecc-2019"
+  }
+
+  http_listener {
+    name                           = "prod-ssui-port-80"
+    frontend_ip_configuration_name = "prod-ssui"
+    frontend_port_name             = "aerserv-prod-eastus-prod-ssui-agw-port-80"
+    protocol                       = "Http"
+  }
+
+  request_routing_rule {
+    name                       = "prod-ssui-80"
+    rule_type                  = "Basic"
+    http_listener_name         = "prod-ssui-port-80"
+    backend_address_pool_name  = "prod-ssui-port-8080"
+    backend_http_settings_name = "prod-ssui-port-8080"
+  }
+
+  request_routing_rule {
+    name                       = "prod-ssui-443"
+    rule_type                  = "Basic"
+    http_listener_name         = "prod-ssui-port-443"
+    backend_address_pool_name  = "prod-ssui-port-8080"
+    backend_http_settings_name = "prod-ssui-port-8080"
+  }
+
+  tags = {
+    environment = "prod"
+    product     = "aerserv"
+    role        = "ssui"
+    name        = "prod-ssui-agw"
+    service     = "prod ssui agw"
+    team        = "aerserv devops"
+    teamemail   = "devops@inmobi.com"
+  }
+}
+
+resource "azurerm_web_application_firewall_policy" "aerserv-prod-eastus-prod-ssui-agw-wafpolicy2" {
+  name                = "aerserv-prod-eastus-prod-ssui-agw-wafpolicy2"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  custom_rules {
+    name      = "Bad-IPs"
+    priority  = 1
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["43.247.158.5/32", "106.51.132.224/32"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Good-IPs"
+    priority  = 2
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["66.162.155.21/32", "208.185.33.68/32", "103.251.108.4/32", "103.251.108.11/32", "14.142.104.170/32", "59.144.134.146/32"]
+    }
+
+    action = "Allow"
+  }
+
+  custom_rules {
+    name      = "Bad-User-Agents1"
+    priority  = 3
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestHeaders"
+        selector      = "UserAgent"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["mediapartners-google"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-User-Agents2"
+    priority  = 4
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestHeaders"
+        selector      = "UserAgent"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["outbrain"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-User-Agents3"
+    priority  = 5
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestHeaders"
+        selector      = "UserAgent"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["fasthttp"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI1"
+    priority  = 6
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestUri"
+      }
+
+      operator           = "Equal"
+      negation_condition = false
+      match_values       = ["/ads.txt"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI2"
+    priority  = 7
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestUri"
+      }
+
+      operator           = "BeginsWith"
+      negation_condition = false
+      match_values       = ["/10"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI3"
+    priority  = 8
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestUri"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["1013557"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI4"
+    priority  = 9
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestUri"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["1024999"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI5"
+    priority  = 10
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestUri"
+      }
+
+      operator           = "BeginsWith"
+      negation_condition = false
+      match_values       = ["/closingad"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI6"
+    priority  = 11
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "RequestUri"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["wp-login.php"]
+    }
+
+    action = "Block"
+  }
+
+  custom_rules {
+    name      = "Bad-URI7"
+    priority  = 12
+    rule_type = "MatchRule"
+
+    match_conditions {
+      match_variables {
+        variable_name = "RemoteAddr"
+      }
+
+      operator           = "IPMatch"
+      negation_condition = false
+      match_values       = ["45.55.82.231/32", "65.60.111.26/32", "65.60.111.27/32", "71.13.201.33/32", "104.163.169.157/32", "207.118.186.190/32"]
+    }
+
+    match_conditions {
+      match_variables {
+        variable_name = "QueryString"
+      }
+
+      operator           = "Contains"
+      negation_condition = false
+      match_values       = ["utm_source=house-ad"]
+    }
+
+    action = "Block"
+  }
+
+  policy_settings {
+    enabled = true
+    mode    = "Detection"
+  }
+
+  managed_rules {
+    managed_rule_set {
+      type    = "OWASP"
+      version = "3.1"
+    }
+  }
+
+  tags = {
+    environment = "prod"
+    product     = "aerserv"
+    role        = "ssui"
+    name        = "prod-ssui-agw-wafpolicy2"
+    service     = "prod ssui agw wafpolicy"
+    team        = "aerserv devops"
+    teamemail   = "devops@inmobi.com"
+  }
+}
